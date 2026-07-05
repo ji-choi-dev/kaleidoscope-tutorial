@@ -6,6 +6,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <iostream>
 
 //===----------------------------------------------------------------------===//
 // Lexer - groups smallest meaningful sequences into tokens
@@ -89,7 +90,16 @@ namespace {
 class ExprAST {
 public:
   virtual ~ExprAST() = default;
+
+  //Print AST node
+  virtual void dump (int indent = 0) const = 0;
 };
+
+//helper AST dump to print out the dump
+static void printIndent(int indent) {
+    for(int i = 0; i < indent; i++)
+        std::cout << "  ";
+}
 
 /// NumberExprAST - Expression class for numeric literals like "1.0".
 class NumberExprAST : public ExprAST {
@@ -97,6 +107,11 @@ class NumberExprAST : public ExprAST {
 
 public:
   NumberExprAST(double Val) : Val(Val) {}
+
+  void dump(int indent = 0) const override {
+    printIndent(indent);
+    std::cout << "Number(" << Val << ")\n";
+  }
 };
 
 /// VariableExprAST - Expression class for referencing a variable, like "a".
@@ -105,6 +120,11 @@ class VariableExprAST : public ExprAST {
 
 public:
   VariableExprAST(const std::string &Name) : Name(Name) {}
+
+  void dump(int indent = 0) const override {
+    printIndent(indent);
+    std::cout << "Variable(" << Name << ")\n";
+  }
 };
 
 /// BinaryExprAST - Expression class for a binary operator.
@@ -116,6 +136,15 @@ public:
   BinaryExprAST(char Op, std::unique_ptr<ExprAST> LHS,
                 std::unique_ptr<ExprAST> RHS)
       : Op(Op), LHS(std::move(LHS)), RHS(std::move(RHS)) {}
+
+  
+  void dump(int indent = 0) const override {
+    printIndent(indent);
+    std::cout << "Binary(" << Op << ")\n";
+
+    LHS->dump(indent + 1);
+    RHS->dump(indent + 1);
+  }
 };
 
 /// CallExprAST - Expression class for function calls.
@@ -127,6 +156,14 @@ public:
   CallExprAST(const std::string &Callee,
               std::vector<std::unique_ptr<ExprAST>> Args)
       : Callee(Callee), Args(std::move(Args)) {}
+
+  void dump(int indent = 0) const override {
+    printIndent(indent);
+    std::cout << "Call(" << Callee << ")\n";
+
+    for (const auto &Arg : Args)
+        Arg->dump(indent + 1);
+  }
 };
 
 /// PrototypeAST - This class represents the "prototype" for a function,
@@ -141,6 +178,19 @@ public:
       : Name(Name), Args(std::move(Args)) {}
 
   const std::string &getName() const { return Name; }
+
+  void dump(int indent = 0) const {
+    printIndent(indent);
+    std::cout << "Prototype(" << Name << ")\n";
+
+    printIndent(indent + 1);
+    std::cout << "Args:";
+
+    for (const auto &Arg : Args)
+      std::cout << " " << Arg;
+
+    std::cout << "\n";
+  }
 };
 
 /// FunctionAST - This class represents a function definition itself.
@@ -152,6 +202,12 @@ public:
   FunctionAST(std::unique_ptr<PrototypeAST> Proto,
               std::unique_ptr<ExprAST> Body)
       : Proto(std::move(Proto)), Body(std::move(Body)) {}
+
+  void dump() const {
+    std::cout << "Function:\n";
+    Proto->dump(1);
+    Body->dump(1);
+  }
 };
 
 } // end anonymous namespace
@@ -192,7 +248,7 @@ std::unique_ptr<PrototypeAST> LogErrorP(const char *Str) {
   return nullptr;
 }
 
-static std::unique_ptr<ExprAST> ParseExpression();
+static std::unique_ptr<ExprAST> ParseExpression(); //circular dependency on the functions so early declaring of the ParseExpression()
 
 /// numberexpr ::= number
 static std::unique_ptr<ExprAST> ParseNumberExpr() {
@@ -373,8 +429,9 @@ static std::unique_ptr<PrototypeAST> ParseExtern() {
 //===----------------------------------------------------------------------===//
 
 static void HandleDefinition() {
-  if (ParseDefinition()) {
+  if (auto AST = ParseDefinition()) {
     fprintf(stderr, "Parsed a function definition.\n");
+    AST->dump();
   } else {
     // Skip token for error recovery.
     getNextToken();
@@ -392,13 +449,15 @@ static void HandleExtern() {
 
 static void HandleTopLevelExpression() {
   // Evaluate a top-level expression into an anonymous function.
-  if (ParseTopLevelExpr()) {
+  if (auto AST = ParseTopLevelExpr()) {
     fprintf(stderr, "Parsed a top-level expr\n");
+    AST->dump();
   } else {
     // Skip token for error recovery.
     getNextToken();
   }
 }
+
 
 /// top ::= definition | external | expression | ';'
 static void MainLoop() {
